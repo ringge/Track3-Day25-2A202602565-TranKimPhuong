@@ -32,8 +32,8 @@ from __future__ import annotations
 import random
 from typing import Any
 
-from gameday_lab.breaker import BreakerState, Permit, SlidingWindowBreaker  # noqa: F401
-from gameday_lab.errors import ErrorKind, classify, counts_toward_breaker  # noqa: F401
+from gameday_lab.breaker import BreakerState, Permit, SlidingWindowBreaker
+from gameday_lab.errors import ErrorKind, classify, counts_toward_breaker
 from gameday_lab.retry import FullJitterBackoff, RetryBudget
 from gameday_lab.sim.contracts import (
     Action,
@@ -79,6 +79,7 @@ class ResilientClient(BaseClient):
         breaker_cfg = dict(settings.get("breaker", {}))
         self.breakers = {name: SlidingWindowBreaker(name, **breaker_cfg) for name in providers}
         self.cooldown_until: dict[str, float] = {name: 0.0 for name in providers}
+        self.quota_until: dict[str, float] = {name: 0.0 for name in providers}
 
     # ------------------------------------------------------------------ provided helper
     def _send(self, call: CallContext, provider: str, now: float, delay: float) -> Action | None:
@@ -97,14 +98,14 @@ class ResilientClient(BaseClient):
             return GiveUp("deadline")
         return Send(provider, timeout_s=timeout, delay_s=delay, tag=permit)
 
-    # ------------------------------------------------------------------ TODO
+    # ------------------------------------------------------------------ routing and results
     def ladder(self, task: str) -> list[str]:
-        """TODO(student): ``self.order`` filtered by capability —
+        """Return ``self.order`` filtered by capability —
         a "tool" call may only use providers with ``supports_tools``."""
-        raise NotImplementedError("TODO(student): ladder()")
+        return [name for name in self.order if task != "tool" or self.providers[name].supports_tools]
 
     def _route(self, call: CallContext, now: float, delay: float = 0.0) -> Action:
-        """TODO(student): pick the provider for the next attempt.
+        """Pick the provider for the next attempt.
 
         Walk the ladder from call.state["idx"]:
           * skip a provider still in cooldown at send time (now + delay)
@@ -115,21 +116,81 @@ class ResilientClient(BaseClient):
         rate-limit cooldown (<= RATE_LIMIT_WAIT_MAX_S, breaker not OPEN, fits the
         deadline), else GiveUp("no_provider_available").
         """
-        raise NotImplementedError("TODO(student): _route()")
+        if call.deadline - now < self.min_time_left_s:
+            return GiveUp("deadline")
+        ladder = call.state["ladder"]
+        while call.state["idx"] < len(ladder):
+            provider = ladder[call.state["idx"]]
+            if self.cooldown_until[provider] <= now + delay:
+                action = self._send(call, provider, now, delay)
+                if action is not None:
+                    if isinstance(action, Send):
+                        call.state["tries"] += 1
+                    return action
+            call.state["idx"] += 1
+            call.state["tries"] = 0
+            delay = 0.0
+
+        # Waiting is useful only for a short tenant rate limit, never a billing failure.
+        candidates = sorted(
+            (self.cooldown_until[provider], idx, provider)
+            for idx, provider in enumerate(ladder)
+            if self.quota_until[provider] <= now
+            and 0 < self.cooldown_until[provider] - now <= RATE_LIMIT_WAIT_MAX_S
+            and self.breakers[provider].state is not BreakerState.OPEN
+        )
+        for until, idx, provider in candidates:
+            delay = until - now
+            if call.deadline - until < self.min_time_left_s:
+                continue
+            action = self._send(call, provider, now, delay)
+            if action is not None:
+                call.state["idx"] = idx
+                call.state["tries"] = 1
+                return action
+        return GiveUp("no_provider_available")
 
     def start(self, call: CallContext, now: float) -> Action:
-        """TODO(student): record the request in the retry budget, initialise
+        """Record the request in the retry budget, initialise
         call.state (ladder, idx=0, tries=0) and route."""
-        raise NotImplementedError("TODO(student): start()")
+        self.budget.record_request(now)
+        call.state.update(ladder=self.ladder(call.task), idx=0, tries=0)
+        return self._route(call, now)
 
     def on_success(self, attempt: Attempt, now: float, latency_s: float) -> None:
-        """TODO(student): report success + latency to the provider's breaker (attempt.tag is the Permit)."""
-        raise NotImplementedError("TODO(student): on_success()")
+        """Report success and latency using the attempt's breaker permit."""
+        self.breakers[attempt.provider].on_success(attempt.tag, now, latency_s)
 
     def on_error(self, attempt: Attempt, err: ProviderError, now: float) -> Action:
-        """TODO(student): implement the decision table in the module docstring."""
-        raise NotImplementedError("TODO(student): on_error()")
+        """Apply the error policy, retrying within budget or moving down the ladder."""
+        call = attempt.call
+        provider = attempt.provider
+        kind = classify(err)
+        breaker = self.breakers[provider]
+        if counts_toward_breaker(kind):
+            breaker.on_failure(attempt.tag, now)
+        else:
+            breaker.release(attempt.tag, now)
+
+        if kind is ErrorKind.CLIENT_ERROR:
+            return GiveUp("client_error")
+        if kind is ErrorKind.QUOTA_EXHAUSTED:
+            until = now + self.quota_cooldown_s
+            self.quota_until[provider] = max(self.quota_until[provider], until)
+            self.cooldown_until[provider] = max(self.cooldown_until[provider], until)
+        elif kind is ErrorKind.RATE_LIMITED:
+            delay = self.backoff.delay(call.state["tries"], err.retry_after)
+            self.cooldown_until[provider] = max(self.cooldown_until[provider], now + delay)
+        elif call.state["tries"] < self.max_attempts_per_provider and breaker.state is not BreakerState.OPEN:
+            delay = self.backoff.delay(call.state["tries"])
+            if call.deadline - (now + delay) >= self.min_time_left_s and self.budget.try_acquire_retry(now):
+                return self._route(call, now, delay)
+
+        call.state["idx"] += 1
+        call.state["tries"] = 0
+        return self._route(call, now)
 
     def on_cancel(self, call: CallContext, tag: Any, now: float) -> None:
-        """TODO(student): a delayed attempt was dropped (deadline) — release its permit."""
-        raise NotImplementedError("TODO(student): on_cancel()")
+        """Release the permit of a delayed attempt dropped at the deadline."""
+        if isinstance(tag, Permit):
+            self.breakers[tag.breaker].release(tag, now)

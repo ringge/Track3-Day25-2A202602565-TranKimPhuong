@@ -6,5 +6,6 @@ __pycache__/
 .mypy_cache/
 reports/gameday/
 reports/*.json
+!reports/scoreboard.json
 reports/*.png
 reports/cache/
