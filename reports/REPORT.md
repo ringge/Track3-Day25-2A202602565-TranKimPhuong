@@ -258,23 +258,3 @@ Không có stale, FAQ availability chỉ 87.33%, dưới ngưỡng 93%, vì entr
 Không cache “Đơn #48213 của tôi đang ở đâu?” kể cả tách theo user: user scope ngăn lộ dữ liệu sang người khác nhưng không ngăn cùng user nhận trạng thái order/refund/điểm đã cũ. Những trạng thái này thay đổi theo giao dịch và không có cơ chế invalidation đủ mạnh trong lab; trường `request.personal` do đó loại cả store lẫn lookup. Scope `prompt_version` ngăn prompt v1 phục vụ request v2; source invalidation ngăn dùng lại tài liệu đã được thông báo thay đổi. Kết quả cuối có `wrong_answers = 0`, gồm không có `other_user`, `personal_cached`, `old_prompt` hay `ignored_invalidation`.
 
 Giữ user-facing availability SLI để đo tác động thực tế, đồng thời theo dõi provider success/error ratio **chỉ trên attempt thực sự gửi**, timeout/503/529, số breaker OPEN, cache-hit/stale-served ratio và tuổi entry stale. Không tính cache hit vào mẫu số provider-health SLI vì sẽ làm outage trông như provider vẫn khỏe; nếu mọi breaker OPEN và provider attempt success bằng 0 trong outage thì cần cảnh báo đường provider dù FAQ vẫn được trả từ cache. Khi breaker đã chặn mọi attempt, mẫu số provider metric có thể bằng 0 chứ không có success: cần kết hợp trạng thái breaker/last failure, không diễn giải “không có lỗi mới” thành đã hồi phục. Ngưỡng cảnh báo provider/cache cụ thể này là đề xuất observability, chưa được triển khai thành rule riêng trong lab.
-
-## Tái lập và kiểm tra cuối
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev,plot]"
-make compare
-make workflows
-make slo
-make cache
-python scripts/run_report_experiments.py --seed 25
-make plot
-make test
-python scripts/grade.py --seeds 25,26,27
-```
-
-Kết quả kiểm tra: **82/82 test pass**; Ruff và `git diff --check` pass cho các file triển khai và script thí nghiệm. Grader ghi **A=12, B=12, C=30, D=12, E=8, G=10**, tổng **84/88**; dữ liệu ẩn và 12 điểm report cần giảng viên chấm. Thí nghiệm dùng seed 25 nên không chứng minh mọi mức tải hoặc mọi sự cố ẩn; việc pass seed 25/26/27 ở đây áp dụng cho băng public.
-
-`.gitignore` của starter bỏ qua `reports/gameday/`, `reports/cache/` và `reports/*.json`. Khi nộp bằng Git, cần đưa các artifact đó vào commit bằng force-add hoặc nộp zip bao gồm chúng; ví dụ `git add -f reports/gameday reports/cache reports/workflows.json reports/workflows_multi_seed.json reports/slo.json reports/scoreboard.json`, cùng `reports/REPORT.md`, `reports/experiments/part_f.json` và `scripts/run_report_experiments.py`. Không thay đổi file bị cấm để làm grader pass.
