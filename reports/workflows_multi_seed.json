@@ -1,0 +1,59 @@
+[
+  {
+    "seed": 25,
+    "pass": true,
+    "metrics": {
+      "sessions": 500,
+      "completed": 500,
+      "completion_rate": 1.0,
+      "worker_crashes": 66,
+      "failed": {},
+      "duplicate_refunds": 0,
+      "duplicate_emails": 0,
+      "lost_refunds": 0,
+      "overpaid_cents": 0,
+      "payments_executions": 500,
+      "wasted_llm_calls": 20,
+      "wasted_llm_per_crash": 0.303,
+      "store_writes": 2500
+    }
+  },
+  {
+    "seed": 26,
+    "pass": true,
+    "metrics": {
+      "sessions": 500,
+      "completed": 500,
+      "completion_rate": 1.0,
+      "worker_crashes": 58,
+      "failed": {},
+      "duplicate_refunds": 0,
+      "duplicate_emails": 0,
+      "lost_refunds": 0,
+      "overpaid_cents": 0,
+      "payments_executions": 500,
+      "wasted_llm_calls": 14,
+      "wasted_llm_per_crash": 0.241,
+      "store_writes": 2500
+    }
+  },
+  {
+    "seed": 27,
+    "pass": true,
+    "metrics": {
+      "sessions": 500,
+      "completed": 500,
+      "completion_rate": 1.0,
+      "worker_crashes": 71,
+      "failed": {},
+      "duplicate_refunds": 0,
+      "duplicate_emails": 0,
+      "lost_refunds": 0,
+      "overpaid_cents": 0,
+      "payments_executions": 500,
+      "wasted_llm_calls": 24,
+      "wasted_llm_per_crash": 0.338,
+      "store_writes": 2500
+    }
+  }
+]
