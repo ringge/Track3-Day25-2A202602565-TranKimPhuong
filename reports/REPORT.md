@@ -1,7 +1,7 @@
 # Lab 25B — Report
 
 **Họ tên / nhóm:** TranKimPhuong · **Mã:** 2A202602565 (theo tên thư mục repo)  
-**Ngày:** 13/10/2026 · **Commit nền:** `18cc181`; phần triển khai và báo cáo nằm trong working tree, chưa commit.  
+**Ngày:** 13/10/2026 · **Commit:** `fe99a308f11412a8a500eca0f31799c1038694a9`  
 **Điểm tự động:** **84/88** với seed `25,26,27`.
 
 Các bảng so sánh và thí nghiệm bên dưới dùng seed traffic/provider **25**, seed RNG của client **1**, thời gian ảo và cấu hình cuối trong `configs/gameday.yaml`. Availability là tỷ lệ **lượt user** thành công; amplification và retry_ratio tính theo **logical call**; p95 chỉ tính trên lượt thành công. Chi phí là đơn vị tương đối của simulator, không phải tiền thực tế. `—` nghĩa là metric không áp dụng.
